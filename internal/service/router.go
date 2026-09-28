@@ -16,6 +16,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	postHandler := NewPostHandler(db)
 	commentHandler := NewCommentHandler(db)
 	likeHandler := NewLikeHandler(db)
+	followHandler := NewFollowHandler(db)
 	r.GET("/me", Auth, Me)
 	r.POST("/register", userHandler.Register)
 	r.POST("/login", userHandler.Login)
@@ -38,6 +39,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		post.GET("/:id/likes", likeHandler.GetOne)
 	}
 	r.DELETE("/comments/:id", Auth, commentHandler.Delete)
-
+	user := r.Group("/users")
+	{
+		//关注列表
+		user.GET("/:id/following", followHandler.FollowList)
+		user.GET("/:id/followers", followHandler.FanList)
+		user.POST("/:id/follow", Auth, followHandler.Follow)
+		user.DELETE("/:id/follow", Auth, followHandler.Unfollow)
+	}
 	return r
 }

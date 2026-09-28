@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"paopao/internal/auth"
 	"paopao/internal/db"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -110,4 +111,45 @@ func Me(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
 	c.JSON(http.StatusOK, gin.H{"user_id": userID, "role": role})
+}
+
+func GetUserID(c *gin.Context) (uint, bool) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户id错误"})
+		return 0, false
+	}
+	//类型断言
+	userId, ok := userID.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户信息类型错误"})
+		return 0, false
+	}
+	return userId, true
+}
+
+func GetParamID(c *gin.Context) (uint, bool) {
+	idString := c.Param("id")
+	id, err := strconv.ParseUint(idString, 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id错误"})
+		return 0, false
+	}
+	return uint(id), true
+}
+
+func parsePage(c *gin.Context) (page, pageSize, offset int) {
+	page, err := strconv.Atoi(c.Query("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	pageSize, err = strconv.Atoi(c.Query("page_size"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset = (page - 1) * pageSize
+	return
 }

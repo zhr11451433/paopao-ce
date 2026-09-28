@@ -48,11 +48,21 @@ type PostLike struct {
 	//两个字段都用 uniqueIndex:同一个名字，GORM 就会把它们合成一个联合唯一索引。
 }
 
+type Follow struct {
+	ID        uint `gorm:"primaryKey"`
+	UserID    uint `gorm:"uniqueIndex:idx_user_follow"` // 谁关注
+	User      User `gorm:"foreignKey:UserID"`
+	FollowID  uint `gorm:"uniqueIndex:idx_user_follow"` // 关注谁
+	Follow    User `gorm:"foreignKey:FollowID"`
+	CreatedAt time.Time
+}
+
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{},
 		&Post{},
 		&Comment{},
 		&PostLike{},
+		&Follow{},
 	)
 }
