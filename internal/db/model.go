@@ -26,6 +26,7 @@ type Post struct {
 	//LikeCount int64     //点赞总数
 	//收藏数
 	//Like bool `gorm:"-"`//帖子是否点赞
+	Images []PostImage `gorm:"foreignKey:PostID"`
 }
 
 //评论 没有标题
@@ -57,6 +58,17 @@ type Follow struct {
 	CreatedAt time.Time
 }
 
+type PostImage struct {
+	ID        uint  `gorm:"primaryKey"`
+	PostID    *uint `gorm:"index:idx_post_image"`
+	UserID    uint  `gorm:"index"`
+	Url       string
+	FileName  string
+	Sort      int
+	Status    int8 `gorm:"default:0"` // 0=临时 1=已绑定
+	CreatedAt time.Time
+}
+
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{},
@@ -64,5 +76,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&Comment{},
 		&PostLike{},
 		&Follow{},
+		&PostImage{},
 	)
 }

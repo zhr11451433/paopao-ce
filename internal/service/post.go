@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"paopao/internal/db"
+	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,7 @@ type PostDetail struct {
 	CreatedAt time.Time     `json:"created_at"`
 	Author    string        `json:"author"`
 	Comments  []CommentItem `json:"comments"`
+	Images    []ImageItem   `json:"images"`
 }
 
 type PostList struct {
@@ -46,11 +48,12 @@ type PostList struct {
 }
 
 type PostListItem struct {
-	ID           uint      `json:"id"`
-	Title        string    `json:"title"`
-	CreatedAt    time.Time `json:"created_at"`
-	Author       string    `json:"author"`
-	CommentCount int       `json:"comment_count"`
+	ID           uint        `json:"id"`
+	Title        string      `json:"title"`
+	CreatedAt    time.Time   `json:"created_at"`
+	Author       string      `json:"author"`
+	CommentCount int         `json:"comment_count"`
+	Images       []ImageItem `json:"images"`
 }
 
 func (u *PostHandler) findOwnPost(c *gin.Context, userId, id uint) (*db.Post, bool) {
@@ -70,7 +73,7 @@ func (u *PostHandler) findOwnPost(c *gin.Context, userId, id uint) (*db.Post, bo
 	return &post, true
 }
 
-func (u *PostHandler) commentCountMap(postIDs []uint) (map[uint]int, error) {
+func commentCountMap(u *gorm.DB, postIDs []uint) (map[uint]int, error) {
 	counts := make(map[uint]int, len(postIDs))
 	if len(postIDs) == 0 {
 		return counts, nil
@@ -80,7 +83,7 @@ func (u *PostHandler) commentCountMap(postIDs []uint) (map[uint]int, error) {
 		Count  int
 	}
 	var rows []row
-	if err := u.db.Model(&db.Comment{}).
+	if err := u.Model(db.Comment{}).
 		Select("post_id, COUNT(*) as count").
 		Where("post_id IN ?", postIDs).
 		Group("post_id").
@@ -146,7 +149,7 @@ func (u *PostHandler) List(c *gin.Context) {
 	for _, p := range posts {
 		postIDs = append(postIDs, p.ID)
 	}
-	countMap, err := u.commentCountMap(postIDs)
+	countMap, err := commentCountMap(u.db, postIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
 		return
@@ -171,30 +174,31 @@ func (u *PostHandler) List(c *gin.Context) {
 
 //发帖
 
-func (u *PostHandler) Create(c *gin.Context) {
-	userId, ok := GetUserID(c)
-	if !ok {
-		return
-	}
-	var req PostRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "解析失败"})
-		return
-	}
-	savePost := db.Post{
-		UserID:  userId,
-		Title:   req.Title,
-		Content: req.Content,
-	}
-	if err := u.db.Create(&savePost).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{
-		"status": "创建成功",
-		"id":     savePost.ID,
-	})
-}
+//⚠️ 已被 PostImageHandler.Posts 取代，勿挂路由」
+//func (u *PostHandler) Create(c *gin.Context) {
+//	userId, ok := GetUserID(c)
+//	if !ok {
+//		return
+//	}
+//	var req PostRequest
+//	if err := c.ShouldBindJSON(&req); err != nil {
+//		c.JSON(http.StatusBadRequest, gin.H{"error": "解析失败"})
+//		return
+//	}
+//	savePost := db.Post{
+//		UserID:  userId,
+//		Title:   req.Title,
+//		Content: req.Content,
+//	}
+//	if err := u.db.Create(&savePost).Error; err != nil {
+//		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
+//		return
+//	}
+//	c.JSON(http.StatusCreated, gin.H{
+//		"status": "创建成功",
+//		"id":     savePost.ID,
+//	})
+//}
 
 //改帖
 
@@ -248,13 +252,26 @@ func (u *PostHandler) Delete(c *gin.Context) {
 
 //查单个帖子
 
+type ImageItem struct {
+	ID  uint   `json:"id"`
+	Url string `json:"url"`
+	//FileName string `json:"file_name"`
+}
+
 func (u *PostHandler) GetOne(c *gin.Context) {
 	id, ok := GetParamID(c)
 	if !ok {
 		return
 	}
 	var post db.Post
-	if err := u.db.Preload("User").Preload("Comments.User").First(&post, id).Error; err != nil {
+	if err := u.db.
+		Preload("Images", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort asc")
+		}).
+		Preload("User").
+		Preload("Comments.User").
+		//Order("sort asc").
+		First(&post, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 			return
@@ -271,6 +288,14 @@ func (u *PostHandler) GetOne(c *gin.Context) {
 			CreatedAt: cm.CreatedAt,
 		})
 	}
+	// ✅ 和评论接口保持一致 created_at ASC：时间小（更早）的排前面
+	sort.Slice(comments, func(i, j int) bool {
+		return comments[i].CreatedAt.Before(comments[j].CreatedAt)
+	})
+	images := toImageItems(post.Images)
+	//sort.Slice(images, func(i, j int) bool {
+	//	return images[i].ID < images[j].ID
+	//})
 	c.JSON(http.StatusOK, PostDetail{
 		ID:        post.ID,
 		Title:     post.Title,
@@ -278,5 +303,19 @@ func (u *PostHandler) GetOne(c *gin.Context) {
 		CreatedAt: post.CreatedAt,
 		Author:    post.User.Name,
 		Comments:  comments,
+		Images:    images,
 	})
+}
+
+//把 []db.PostImage 转成 []ImageItem
+
+func toImageItems(images []db.PostImage) []ImageItem {
+	items := make([]ImageItem, 0, len(images))
+	for _, image := range images {
+		items = append(items, ImageItem{
+			ID:  image.ID,
+			Url: image.Url,
+		})
+	}
+	return items
 }
