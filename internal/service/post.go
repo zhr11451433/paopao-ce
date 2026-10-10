@@ -11,6 +11,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// 业务哨兵错误
+
+var (
+	ErrImageCountOverflow = errors.New("一次最多上传9张图片")
+	ErrImageInvalid       = errors.New("部分图片无效：图片不存在、不属于你或已绑定其他帖子")
+	ErrDatabase           = errors.New("数据库错误")
+)
+
 type PostHandler struct {
 	db *gorm.DB
 }
@@ -22,6 +30,7 @@ func NewPostHandler(db *gorm.DB) *PostHandler {
 type PostRequest struct {
 	Title   string `json:"title" binding:"required,max=100"`
 	Content string `json:"content" binding:"required"`
+	Images  []uint `json:"images"` // 新增：图片id数组，可选
 }
 
 type CommentItem struct {
@@ -41,17 +50,26 @@ type PostDetail struct {
 	Images    []ImageItem   `json:"images"`
 }
 
-type PostList struct {
-	ID        uint      `json:"id"`
-	Title     string    `json:"title"`
-	CreatedAt time.Time `json:"created_at"`
-}
+//type PostList struct {
+//	ID        uint        `json:"id"`
+//	Title     string      `json:"title"`
+//	CreatedAt time.Time   `json:"created_at"`
+//	Images    []ImageItem `json:"images"`
+//}
 
 type PostListItem struct {
 	ID           uint        `json:"id"`
 	Title        string      `json:"title"`
 	CreatedAt    time.Time   `json:"created_at"`
 	Author       string      `json:"author"`
+	CommentCount int         `json:"comment_count"`
+	Images       []ImageItem `json:"images"`
+}
+
+type PostListItemMine struct {
+	ID           uint        `json:"id"`
+	Title        string      `json:"title"`
+	CreatedAt    time.Time   `json:"created_at"`
 	CommentCount int         `json:"comment_count"`
 	Images       []ImageItem `json:"images"`
 }
@@ -104,25 +122,48 @@ func (u *PostHandler) ListMine(c *gin.Context) {
 	page, pageSize, offset := parsePage(c)
 	var total int64
 	if err := u.db.Model(&db.Post{}).Where("user_id = ?", userId).Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": ErrDatabase})
 		return
 	}
-	var posts []PostList
-	if err := u.db.Model(&db.Post{}).
+	var posts []db.Post
+	if err := u.db.
 		Select("id", "title", "created_at").
 		Where("user_id = ?", userId).
+		Preload("Images", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort asc")
+		}).
 		Order("id DESC").
 		Limit(pageSize).
 		Offset(offset).
 		Find(&posts).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": ErrDatabase})
 		return
+	}
+	list := make([]PostListItemMine, 0, len(posts))
+	postIDs := make([]uint, 0, len(posts))
+	for _, p := range posts {
+		postIDs = append(postIDs, p.ID)
+	}
+	countMap, err := commentCountMap(u.db, postIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": ErrDatabase})
+		return
+	}
+	for _, post := range posts {
+		images := toImageItems(post.Images)
+		list = append(list, PostListItemMine{
+			ID:           post.ID,
+			Title:        post.Title,
+			CreatedAt:    post.CreatedAt,
+			CommentCount: countMap[post.ID],
+			Images:       images,
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"total":     total,
 		"page":      page,
 		"page_size": pageSize,
-		"list":      posts,
+		"list":      list,
 	})
 }
 
@@ -138,6 +179,9 @@ func (u *PostHandler) List(c *gin.Context) {
 	var posts []db.Post
 	if err := u.db.
 		Preload("User").
+		Preload("Images", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort asc")
+		}).
 		Order("id DESC").
 		Limit(pageSize).
 		Offset(offset).
@@ -156,12 +200,14 @@ func (u *PostHandler) List(c *gin.Context) {
 	}
 	list := make([]PostListItem, 0, len(posts))
 	for _, p := range posts {
+		images := toImageItems(p.Images)
 		list = append(list, PostListItem{
 			ID:           p.ID,
 			Title:        p.Title,
 			CreatedAt:    p.CreatedAt,
 			Author:       p.User.Name,
 			CommentCount: countMap[p.ID],
+			Images:       images,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -220,14 +266,65 @@ func (u *PostHandler) Update(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := u.db.Model(post).Updates(map[string]any{
-		"title":   req.Title,
-		"content": req.Content,
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+	if len(req.Images) > 9 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrImageCountOverflow})
+		return
+	}
+	err := u.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(post).Updates(map[string]any{
+			"title":   req.Title,
+			"content": req.Content,
+		}).Error; err != nil {
+			return err
+		}
+		// ✅ 关键点：images字段没传，直接跳过全部图片处理，旧图片保持原样
+		if req.Images == nil {
+			return nil
+		}
+		// ② 将本帖子原来绑定的全部图片解除绑定：post_id置null，status变回0
+		if err := tx.Model(&db.PostImage{}).
+			Where("post_id = ?", post.ID).
+			Updates(map[string]any{"post_id": nil, "status": 0}).Error; err != nil {
+			return err
+		}
+		if len(req.Images) == 0 {
+			return nil
+		}
+		// ③ 绑定新传入的图片ID列表
+		// where条件：图片属于我，并且要么是临时未绑定，要么本来就属于这个帖子
+		result := tx.Model(&db.PostImage{}).
+			Where("id in ? and user_id = ? and (post_id is null or post_id = ?)", req.Images, userId, post.ID).
+			Updates(map[string]any{
+				"status":  1,
+				"post_id": post.ID,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		// 行数校验：有任意一张图片不满足条件（不属于你 / 已经绑别的帖子 / id不存在），直接回滚
+		if result.RowsAffected != int64(len(req.Images)) {
+			return ErrImageInvalid
+		}
+		return nil
+	})
+	if err != nil {
+		// 区分业务错误和数据库错误
+		if errors.Is(err, ErrImageCountOverflow) || errors.Is(err, ErrImageInvalid) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "更新成功"})
+	//if err := u.db.Model(post).Updates(map[string]any{
+	//	"title":   req.Title,
+	//	"content": req.Content,
+	//}).Error; err != nil {
+	//	c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+	//	return
+	//}
+	//c.JSON(http.StatusOK, gin.H{"status": "更新成功"})
 }
 
 func (u *PostHandler) Delete(c *gin.Context) {

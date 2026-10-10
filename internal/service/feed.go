@@ -45,7 +45,7 @@ func (u *FeedHandler) Feed(c *gin.Context) {
 	if err := u.db.
 		Preload("User").
 		Preload("Images", func(db *gorm.DB) *gorm.DB {
-			return db.Order("sort acs")
+			return db.Order("sort asc")
 		}).
 		Where("user_id IN (?) or user_id = ?", followIds, myId).
 		Order("posts.id desc").
