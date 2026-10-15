@@ -46,6 +46,9 @@ type PostDetail struct {
 	Content   string        `json:"content"`
 	CreatedAt time.Time     `json:"created_at"`
 	Author    string        `json:"author"`
+	UserID    uint          `json:"user_id"`    // ← 新增：作者 id，前端拿它跳主页
+	LikeCount int           `json:"like_count"` // ← 新增
+	IsLiked   bool          `json:"is_liked"`   // ← 新增：当前用户点没点过
 	Comments  []CommentItem `json:"comments"`
 	Images    []ImageItem   `json:"images"`
 }
@@ -62,7 +65,10 @@ type PostListItem struct {
 	Title        string      `json:"title"`
 	CreatedAt    time.Time   `json:"created_at"`
 	Author       string      `json:"author"`
+	UserID       uint        `json:"user_id"`      // ← 新增
 	CommentCount int         `json:"comment_count"`
+	LikeCount    int         `json:"like_count"`   // ← 新增
+	IsLiked      bool        `json:"is_liked"`     // ← 新增
 	Images       []ImageItem `json:"images"`
 }
 
@@ -170,6 +176,9 @@ func (u *PostHandler) ListMine(c *gin.Context) {
 //公开列表
 
 func (u *PostHandler) List(c *gin.Context) {
+	// ① 先拿"我是谁"。游客是 0 —— 列表允许游客看，只是 is_liked 恒为 false。
+	myID := optionalUserID(c)
+
 	page, pageSize, offset := parsePage(c)
 	var total int64
 	if err := u.db.Model(&db.Post{}).Count(&total).Error; err != nil {
@@ -193,7 +202,18 @@ func (u *PostHandler) List(c *gin.Context) {
 	for _, p := range posts {
 		postIDs = append(postIDs, p.ID)
 	}
+	// ② 三个批量查询，各一次。不要挪进下面的 for 循环里逐条查。
 	countMap, err := commentCountMap(u.db, postIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	likeMap, err := likeCountMap(u.db, postIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	likedSet, err := likedPostSet(u.db, myID, postIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
 		return
@@ -206,7 +226,10 @@ func (u *PostHandler) List(c *gin.Context) {
 			Title:        p.Title,
 			CreatedAt:    p.CreatedAt,
 			Author:       p.User.Name,
+			UserID:       p.UserID,       // ← 新增
 			CommentCount: countMap[p.ID],
+			LikeCount:    likeMap[p.ID],  // ← 新增，没点过的是 0
+			IsLiked:      likedSet[p.ID], // ← 新增，没点过的是 false
 			Images:       images,
 		})
 	}
@@ -219,32 +242,6 @@ func (u *PostHandler) List(c *gin.Context) {
 }
 
 //发帖
-
-//⚠️ 已被 PostImageHandler.Posts 取代，勿挂路由」
-//func (u *PostHandler) Create(c *gin.Context) {
-//	userId, ok := GetUserID(c)
-//	if !ok {
-//		return
-//	}
-//	var req PostRequest
-//	if err := c.ShouldBindJSON(&req); err != nil {
-//		c.JSON(http.StatusBadRequest, gin.H{"error": "解析失败"})
-//		return
-//	}
-//	savePost := db.Post{
-//		UserID:  userId,
-//		Title:   req.Title,
-//		Content: req.Content,
-//	}
-//	if err := u.db.Create(&savePost).Error; err != nil {
-//		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
-//		return
-//	}
-//	c.JSON(http.StatusCreated, gin.H{
-//		"status": "创建成功",
-//		"id":     savePost.ID,
-//	})
-//}
 
 //改帖
 
@@ -360,6 +357,8 @@ func (u *PostHandler) GetOne(c *gin.Context) {
 	if !ok {
 		return
 	}
+	myID := optionalUserID(c)
+
 	var post db.Post
 	if err := u.db.
 		Preload("Images", func(db *gorm.DB) *gorm.DB {
@@ -367,7 +366,6 @@ func (u *PostHandler) GetOne(c *gin.Context) {
 		}).
 		Preload("User").
 		Preload("Comments.User").
-		//Order("sort asc").
 		First(&post, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
@@ -376,6 +374,28 @@ func (u *PostHandler) GetOne(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
 		return
 	}
+
+	// 点赞数：单条帖子，直接 Count
+	var likeCount int64
+	if err := u.db.Model(&db.PostLike{}).
+		Where("post_id = ?", post.ID).
+		Count(&likeCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	// 我点没点过：游客（myID == 0）不用查，恒 false
+	isLiked := false
+	if myID != 0 {
+		var n int64
+		if err := u.db.Model(&db.PostLike{}).
+			Where("user_id = ? AND post_id = ?", myID, post.ID).
+			Count(&n).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+			return
+		}
+		isLiked = n > 0
+	}
+
 	comments := make([]CommentItem, 0, len(post.Comments))
 	for _, cm := range post.Comments {
 		comments = append(comments, CommentItem{
@@ -385,20 +405,19 @@ func (u *PostHandler) GetOne(c *gin.Context) {
 			CreatedAt: cm.CreatedAt,
 		})
 	}
-	// ✅ 和评论接口保持一致 created_at ASC：时间小（更早）的排前面
 	sort.Slice(comments, func(i, j int) bool {
 		return comments[i].CreatedAt.Before(comments[j].CreatedAt)
 	})
 	images := toImageItems(post.Images)
-	//sort.Slice(images, func(i, j int) bool {
-	//	return images[i].ID < images[j].ID
-	//})
 	c.JSON(http.StatusOK, PostDetail{
 		ID:        post.ID,
 		Title:     post.Title,
 		Content:   post.Content,
 		CreatedAt: post.CreatedAt,
 		Author:    post.User.Name,
+		UserID:    post.UserID,    // ← 新增
+		LikeCount: int(likeCount), // ← 新增
+		IsLiked:   isLiked,        // ← 新增
 		Comments:  comments,
 		Images:    images,
 	})
@@ -415,4 +434,48 @@ func toImageItems(images []db.PostImage) []ImageItem {
 		})
 	}
 	return items
+}
+
+// 批量查一组帖子的点赞数。和 commentCountMap 一个套路：一次查完，按 post_id 分组。
+// 没被点赞过的帖子不会出现在 map 里，取值时用 likeMap[id] 拿到的是 0（map 的零值）。
+func likeCountMap(u *gorm.DB, postIDs []uint) (map[uint]int, error) {
+	counts := make(map[uint]int, len(postIDs))
+	if len(postIDs) == 0 {
+		return counts, nil
+	}
+	type row struct {
+		PostID uint
+		Count  int
+	}
+	var rows []row
+	if err := u.Model(db.PostLike{}).
+		Select("post_id, COUNT(*) as count").
+		Where("post_id IN ?", postIDs).
+		Group("post_id").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		counts[r.PostID] = r.Count
+	}
+	return counts, nil
+}
+
+// 批量查「这一组帖子里，我点过哪几个」。
+// myID == 0（游客）时直接返回空 map，一次数据库都不查。
+func likedPostSet(u *gorm.DB, myID uint, postIDs []uint) (map[uint]bool, error) {
+	liked := make(map[uint]bool, len(postIDs))
+	if myID == 0 || len(postIDs) == 0 {
+		return liked, nil
+	}
+	var ids []uint
+	if err := u.Model(&db.PostLike{}).
+		Where("user_id = ? AND post_id IN ?", myID, postIDs).
+		Pluck("post_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		liked[id] = true
+	}
+	return liked, nil
 }

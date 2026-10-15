@@ -64,7 +64,18 @@ func (u *FeedHandler) Feed(c *gin.Context) {
 	for _, post := range Posts {
 		postIDs = append(postIDs, post.ID)
 	}
-	countMap, err := commentCountMap(u.db, postIDs)
+		countMap, err := commentCountMap(u.db, postIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	// 新增：点赞数 + 我点过哪几个
+	likeMap, err := likeCountMap(u.db, postIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	likedSet, err := likedPostSet(u.db, myId, postIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
 		return
@@ -76,9 +87,12 @@ func (u *FeedHandler) Feed(c *gin.Context) {
 		requestPosts = append(requestPosts, PostListItem{
 			ID:           post.ID,
 			Author:       post.User.Name,
+			UserID:       post.UserID,       // ← 新增
 			CreatedAt:    post.CreatedAt,
 			Title:        post.Title,
 			CommentCount: countMap[post.ID],
+			LikeCount:    likeMap[post.ID],  // ← 新增
+			IsLiked:      likedSet[post.ID], // ← 新增
 			Images:       images,
 		})
 	}

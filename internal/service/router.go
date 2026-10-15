@@ -25,6 +25,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	r.Static("/uploads", uploadBaseDir)
 
 	Auth := middleware.Auth(cfg.JWTSecret)
+	OptionalAuth := middleware.OptionalAuth(cfg.JWTSecret)
 	//Require := middleware.RequireAdmin()
 	userHandler := NewUserHandler(db, cfg.JWTSecret)
 	postHandler := NewPostHandler(db)
@@ -45,8 +46,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		post.POST("", Auth, postImageHandler.Posts)
 		post.PUT("/:id", Auth, postHandler.Update)
 		post.DELETE("/:id", Auth, postHandler.Delete)
-		post.GET("/:id", postHandler.GetOne)
-		post.GET("", postHandler.List)
+		post.GET("/:id", OptionalAuth, postHandler.GetOne)
+		post.GET("", OptionalAuth, postHandler.List)
 		//评论
 		post.POST("/:id/comments", Auth, commentHandler.Post)
 		post.GET("/:id/comments", commentHandler.Get)
@@ -72,6 +73,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		user.GET("/:id/followers", followHandler.FanList)
 		user.POST("/:id/follow", Auth, followHandler.Follow)
 		user.DELETE("/:id/follow", Auth, followHandler.Unfollow)
+		// 公开资料，不用登录。放在 /:id/following 后面，避免和更长的路径抢
+		user.GET("/:id", userHandler.GetOne)
 	}
 	return r
 }

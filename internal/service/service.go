@@ -113,6 +113,58 @@ func Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"user_id": userID, "role": role})
 }
 
+// 公开资料。不返回邮箱和密码。
+// 关注数 = 这个人关注了多少人（follows.user_id）
+// 粉丝数 = 多少人关注了他（follows.follow_id）
+// 帖子数 = posts.user_id，软删除的帖子 GORM 默认不计入
+type UserProfile struct {
+	ID             uint   `json:"id"`
+	Name           string `json:"name"`
+	Role           string `json:"role"`
+	FollowingCount int64  `json:"following_count"`
+	FollowerCount  int64  `json:"follower_count"`
+	PostCount      int64  `json:"post_count"`
+}
+
+func (u *UserHandler) GetOne(c *gin.Context) {
+	id, ok := GetParamID(c)
+	if !ok {
+		return
+	}
+	var user db.User
+	if err := u.db.First(&user, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	var followingCount int64
+	if err := u.db.Model(&db.Follow{}).Where("user_id = ?", user.ID).Count(&followingCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	var followerCount int64
+	if err := u.db.Model(&db.Follow{}).Where("follow_id = ?", user.ID).Count(&followerCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	var postCount int64
+	if err := u.db.Model(&db.Post{}).Where("user_id = ?", user.ID).Count(&postCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
+	c.JSON(http.StatusOK, UserProfile{
+		ID:             user.ID,
+		Name:           user.Name,
+		Role:           user.Role,
+		FollowingCount: followingCount,
+		FollowerCount:  followerCount,
+		PostCount:      postCount,
+	})
+}
+
 func GetUserID(c *gin.Context) (uint, bool) {
 	userID, ok := c.Get("user_id")
 	if !ok {
@@ -152,4 +204,23 @@ func parsePage(c *gin.Context) (page, pageSize, offset int) {
 	}
 	offset = (page - 1) * pageSize
 	return
+}
+
+// optionalUserID：给【公开路由】用的"软"取用户 id。
+//
+// 和 GetUserID 的区别：
+//   GetUserID     取不到就写 401 并 return false —— 它是给"必须登录"的路由用的；
+//   optionalUserID 取不到就返回 0，什么都不写   —— 未登录在这里是合法状态。
+//
+// 依赖 middleware.OptionalAuth 先把 user_id 塞进上下文；没挂那个中间件时这里恒返回 0。
+func optionalUserID(c *gin.Context) uint {
+	v, ok := c.Get("user_id")
+	if !ok {
+		return 0
+	}
+	id, ok := v.(uint)
+	if !ok {
+		return 0
+	}
+	return id
 }
