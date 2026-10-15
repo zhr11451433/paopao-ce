@@ -1,0 +1,125 @@
+/**
+ * 全局样式。作者对应的是 src/assets/css/main.less（只有 1.8KB），
+ * 我们照搬布局部分，把组件库相关的部分换成 Element Plus 的说法。
+ */
+
+:root {
+  /* ★ 三栏布局的唯一旋钮：想加宽中间栏只改这一个值 */
+  --content-main: 620px;
+
+  /**
+   * 把 Element Plus 的主题色改成泡泡绿。
+   *
+   * EP 的组件在运行时读的是这一串 CSS 变量。只改 --el-color-primary 是不够的：
+   * 鼠标悬停、禁用态用的都是 light-3 / light-5 / dark-2 这些派生色，
+   * 它们不会自动跟着算，必须一起覆盖，否则按钮一 hover 就变回默认蓝。
+   *
+   * #18a058 是作者用的 naive-ui 默认主色，我们原样搬过来，视觉才一致。
+   */
+  --el-color-primary: #18a058;
+  --el-color-primary-light-3: #46b37a;
+  --el-color-primary-light-5: #74c69c;
+  --el-color-primary-light-7: #a3d9bd;
+  --el-color-primary-light-8: #bae3cd;
+  --el-color-primary-light-9: #d1ecde;
+  --el-color-primary-dark-2: #137a44;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', Arial, sans-serif;
+  font-size: 14px;
+  color: #333;
+  background-color: #fff;
+}
+
+/* 绿色链接，和作者 main.less 里的 .hash-link / .user-link 一致 */
+.hash-link,
+.user-link {
+  color: #18a058;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.username-link {
+  color: #000;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* 作者 main.less:46-55 —— 「关注 / 粉丝 / 泡泡」那三个计数链接 */
+.following-link {
+  color: #000;
+  text-decoration: none;
+  cursor: pointer;
+  opacity: 0.75;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+/* ---- 三栏布局（作者 main.less 的核心，逐行搬过来的）---- */
+.app-container {
+  margin: 0;
+}
+
+.main-wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+
+  .content-wrap {
+    width: 100%;
+    max-width: var(--content-main);
+    position: relative;
+  }
+}
+
+/* 窄屏：中间栏铺满整个宽度 */
+@media screen and (max-width: 821px) {
+  .content-wrap {
+    max-width: 100%;
+  }
+}
+
+html,
+body {
+  background-color: var(--el-bg-color);
+}
+
+/**
+ * 暗色下的链接颜色（作者 main.less:97-112）。
+ *
+ * 为什么必须补：上面那几个链接写死了 `color: #000`，暗色背景是近黑的，
+ * 不覆盖就是**黑字黑底**——名字和计数直接看不见。
+ *
+ * 挂载点是 `<html class="dark">`（见 `src\store\main.ts:39`），
+ * 不是作者那边的 `.app-container`，所以这里直接写 `.dark` 后代选择器。
+ */
+.dark {
+  .hash-link,
+  .user-link {
+    color: #63e2b7;
+  }
+
+  .following-link,
+  .username-link {
+    color: #eee;
+  }
+}
