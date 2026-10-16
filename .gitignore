@@ -1,1 +1,10 @@
 .env
+
+# 本地构建/工具缓存。DSH 沙箱下 npm 与 go 的默认缓存目录都在工作区之外，
+# 会被拒绝写入（EPERM），所以它们必须落在工作区里 —— 但不应进版本库。
+.tmp/
+.gocache/
+.gotmp/
+web/.npm-cache/
+.dsh/
+.acl-recovery/

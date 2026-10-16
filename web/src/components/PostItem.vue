@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatPrettyDate } from '@/utils/formatTime'
 import { likePost, unlikePost } from '@/api/post'
+import { followUser, unfollowUser } from '@/api/user'
 import PostImage from '@/components/PostImage.vue'
+import { useUserStore } from '@/store/user'
 import type { PostListItem } from '@/types/api'
 import {
+  BodyOutline,
   Heart,
   HeartOutline,
   ChatboxOutline,
   BookmarkOutline,
   EllipsisHorizontal,
   ShareSocialOutline,
+  WalkOutline,
 } from '@vicons/ionicons5'
 
 const props = withDefaults(
@@ -28,6 +32,7 @@ const props = withDefaults(
 )
 
 const router = useRouter()
+const userStore = useUserStore()
 
 /**
  * 点赞的本地数字。
@@ -51,16 +56,56 @@ watch(
 )
 
 /**
- * 「更多」菜单项 —— 对应作者 post-item.vue:206-251 的 tweetOptions。
- *
- * 他那里最多能拼出 4 项：私信 @xxx / 关注|取消关注 @xxx / 添加|删除好友 @xxx / 复制链接。
- * 前三项每一项都依赖 post.user 上的东西（username、id、is_following、is_friend）。
- *
- * 广场列表现在有 user_id 了，但仍然没有 username、is_following、is_friend
- * （关注关系查询和好友体系都没有，S4）。
- * 所以前三项还是拼不出来，只剩「复制链接」。
+ * 作者 `post-item.vue:215-228` 用 `post.user.is_following` 决定菜单写「关注」还是「取消关注」。
+ * C8 把这个布尔值放到了列表项顶层 `is_following`。翻页换了一批帖子时，props 会变，所以要 watch。
  */
-const MORE_OPTIONS = [{ key: 'copyLink', label: '复制链接', icon: ShareSocialOutline }] as const
+const following = ref(props.post.is_following === true)
+watch(
+  () => props.post.is_following,
+  (value) => {
+    following.value = value === true
+  },
+)
+
+/**
+ * 作者 `Home.vue:59` 传入 `:isOwner="userInfo.id == post.user_id"`，
+ * 再配合 `addFollowAction`（`post-item.vue:215`）才画出关注项。
+ * C9 只改这一个组件，所以自己用 store 里的登录 id 判断「是不是我的帖」，
+ * 有 `user_id`、已登录、且不是自己，才显示关注 / 取关。
+ * 私信、加好友作者也有（`:209-244`），对应 C41 / C42，这一轮不加。
+ */
+const canFollow = computed(() => {
+  const authorId = props.post.user_id
+  const myId = userStore.user?.id
+  return Boolean(authorId) && Boolean(myId) && authorId !== myId
+})
+
+type MoreOption = {
+  key: 'copyLink' | 'follow' | 'unfollow'
+  label: string
+  icon: Component
+}
+
+const moreOptions = computed((): MoreOption[] => {
+  const options: MoreOption[] = []
+  if (canFollow.value) {
+    if (following.value) {
+      options.push({
+        key: 'unfollow',
+        label: '取消关注 @' + props.post.author,
+        icon: WalkOutline,
+      })
+    } else {
+      options.push({
+        key: 'follow',
+        label: '关注 @' + props.post.author,
+        icon: BodyOutline,
+      })
+    }
+  }
+  options.push({ key: 'copyLink', label: '复制链接', icon: ShareSocialOutline })
+  return options
+})
 
 function goPostDetail(): void {
   router.push({ name: 'post', params: { id: props.post.id } })
@@ -102,9 +147,43 @@ function onLikeClick(event: MouseEvent): void {
   void toggleLike()
 }
 
-/** el-dropdown 的 command 类型是 string | number | object，不是纯 string */
-function handleMoreAction(command: string | number | object): void {
-  if (command !== 'copyLink') return
+/**
+ * 作者点关注会走 `useUserAction.ts:14-51` 的 `followAction`：
+ * 先弹「确定关注 @名字 吗？」/「确定取消关注 @名字 吗？」，确定后再打接口。
+ * 文案和 `UserCard.vue` / `UserView.vue` 已经对齐过：关注成功「关注成功」，取关成功「操作成功」。
+ */
+async function handleFollowAction(): Promise<void> {
+  const authorId = props.post.user_id
+  if (!authorId) return
+  try {
+    await ElMessageBox.confirm(
+      `确定${following.value ? '取消关注 @' : '关注 @'}${props.post.author} 吗？`,
+      '提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'success',
+      },
+    )
+  } catch {
+    return
+  }
+  try {
+    if (following.value) {
+      await unfollowUser(authorId)
+      following.value = false
+      ElMessage.success('操作成功')
+    } else {
+      await followUser(authorId)
+      following.value = true
+      ElMessage.success('关注成功')
+    }
+  } catch {
+    // 401 / 400 由 utils/request.ts 统一弹
+  }
+}
+
+function copyPostLink(): void {
 
   /**
    * 作者 post-item.vue:263-266 用的是 copy-to-clipboard 这个第三方包，
@@ -120,6 +199,17 @@ function handleMoreAction(command: string | number | object): void {
     .writeText(url)
     .then(() => ElMessage.success('链接已复制到剪贴板'))
     .catch(() => ElMessage.error('复制失败，请手动复制'))
+}
+
+/** el-dropdown 的 command 类型是 string | number | object，不是纯 string */
+function handleMoreAction(command: string | number | object): void {
+  if (command === 'follow' || command === 'unfollow') {
+    void handleFollowAction()
+    return
+  }
+  if (command === 'copyLink') {
+    copyPostLink()
+  }
 }
 </script>
 
@@ -170,6 +260,7 @@ function handleMoreAction(command: string | number | object): void {
           <el-dropdown
             :trigger="isMobile ? 'click' : 'hover'"
             placement="bottom-end"
+            @click.stop
             @command="handleMoreAction"
           >
             <el-button text circle>
@@ -182,7 +273,7 @@ function handleMoreAction(command: string | number | object): void {
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item v-for="opt in MORE_OPTIONS" :key="opt.key" :command="opt.key">
+                <el-dropdown-item v-for="opt in moreOptions" :key="opt.key" :command="opt.key">
                   <el-icon><component :is="opt.icon" /></el-icon>
                   {{ opt.label }}
                 </el-dropdown-item>

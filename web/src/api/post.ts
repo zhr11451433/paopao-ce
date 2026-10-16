@@ -9,6 +9,7 @@ import type {
   MyPostListResult,
   PageParams,
   PostDetail,
+  PostListParams,
   PostListResult,
   StatusResult,
 } from '@/types/api'
@@ -17,8 +18,8 @@ import type {
 
 /** 广场列表：GET /posts（无需登录） */
 
-export function getPosts(params:PageParams = {}):Promise<PostListResult>{
-    return request<PostListResult>({ url: '/posts', method: 'get', params })
+export function getPosts(params: PostListParams = {}): Promise<PostListResult> {
+  return request<PostListResult>({ url: '/posts', method: 'get', params })
 }
 
 /** 我的帖子：GET /posts/me（需登录，且没有 author 字段） */

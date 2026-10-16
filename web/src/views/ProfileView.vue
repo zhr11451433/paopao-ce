@@ -79,10 +79,12 @@ const listEmpty = computed(() =>
 /**
  * 我的泡泡（`GET /posts/me`）。
  *
- * 两点和 `PostListItem` 对不上，必须在这里补：
- *   1. 后端的 `/posts/me` 返回的每一项**没有 author**（`MyPostListItem`），
- *      而 `PostItem` 要显示作者 —— 这里直接拿当前登录用户的名字填上。
- *   2. 它是分页的，所以照 PostDetailView / FollowingView 的写法手写分页。
+ * 作者 `views\Profile.vue` 把列表交给 `post-item`，卡片自己读作者 id 和点赞。
+ * 我们的 `PostItem` 也一样：有 `user_id` 作者名才能点进 `/user/:id`；
+ * 有 `like_count` 才显示数字，点爱心才是点赞，否则点击会冒泡进详情。
+ *
+ * C6 的接口已经返回 `user_id` / `like_count` / `is_liked`，这里原样摊进去。
+ * 仍然没有 `author`，名字用当前登录用户的。
  */
 async function loadPostList(reset = false): Promise<void> {
   if (reset) {
@@ -94,8 +96,15 @@ async function loadPostList(reset = false): Promise<void> {
   try {
     const res = await getMyPosts({ page: page.value, page_size: PAGE_SIZE })
     const rows: PostListItem[] = res.list.map((item) => ({
-      ...item,
+      id: item.id,
+      title: item.title,
+      created_at: item.created_at,
+      comment_count: item.comment_count,
+      images: item.images,
       author: user.value?.name ?? '',
+      user_id: item.user_id,
+      like_count: item.like_count,
+      is_liked: item.is_liked,
     }))
     postList.value = page.value > 1 ? [...postList.value, ...rows] : rows
     postCount.value = res.total

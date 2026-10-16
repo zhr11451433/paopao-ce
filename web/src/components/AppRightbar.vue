@@ -1,21 +1,57 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { Search } from '@vicons/ionicons5'
+
 /**
  * 右栏。
  *
- * 作者原版有三块：搜索框、热门话题、版权。
- * 其中「热门话题 / 关注话题」需要 GET /v1/tags 一类接口，你的后端没有，
- * 所以这里只保留版权，并在原位置留一个注释说明将来补什么。
- * 宽度 240px、定位方式都照搬作者的 rightbar.vue。
+ * 作者 `rightbar.vue` 有三块：搜索框、热门话题、版权。
+ * 热门话题 / 关注话题要 GET /tags，那是 C31，这里先不画。
+ * 宽度 240px、定位方式和作者一样。
  */
+
+const router = useRouter()
 const year = new Date().getFullYear()
+
+/**
+ * 作者 `rightbar.vue:102` 的 keyword，回车走 `handleSearch`（`:160-167`）：
+ * `router.push({ name: 'home', query: { q: keyword } })`。
+ * 他不带 `t=tag`，那是话题链接才加的。空词就打开广场，不带 q。
+ */
+const keyword = ref('')
+
+function handleSearch(): void {
+  const q = keyword.value.trim()
+  void router.push({
+    name: 'home',
+    query: q ? { q } : {},
+  })
+}
 </script>
 
 <template>
   <aside class="rightbar-wrap">
     <!--
-      将来补「热门话题」的位置：
+      作者 rightbar.vue:3-15：圆角、可清空、前缀放大镜，回车才搜。
+      没有单独的搜索按钮。n-input 换成 el-input。
+    -->
+    <div class="search-wrap">
+      <el-input
+        v-model="keyword"
+        clearable
+        placeholder="搜一搜..."
+        @keyup.enter="handleSearch"
+      >
+        <template #prefix>
+          <el-icon><Search /></el-icon>
+        </template>
+      </el-input>
+    </div>
+
+    <!--
+      将来补「热门话题」的位置（C31）：
       <el-card shadow="never" class="panel"> ... </el-card>
-      数据源需要一个"取热门标签"的接口，后端目前没有。
     -->
 
     <el-card shadow="never" class="panel about-card">
@@ -46,6 +82,11 @@ const year = new Date().getFullYear()
   &::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+
+  /* 作者 rightbar.vue:224-226 */
+  .search-wrap {
+    margin: 12px 0;
   }
 
   .panel {

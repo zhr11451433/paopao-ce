@@ -7,7 +7,7 @@
  * 我们的资料接口是 C1 的 `GET /users/:id`，字段是
  * name / following_count / follower_count / post_count / role。
  * 没有头像、注册时间、是否已关注，这三样继续空着。
- * 帖子列表仍是空态，那是 C5，这一轮不接。
+ * 「泡泡」列表走 C4 的 `GET /users/:id/posts`。另外四个 tab 没有 style 参数，仍是空态（C56）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -15,13 +15,23 @@ import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { BodyOutline, EllipsisHorizontal, SettingsOutline, WalkOutline } from '@vicons/ionicons5'
 import MainNav from '@/components/MainNav.vue'
-import { followUser, getUser, unfollowUser } from '@/api/user'
+import PostItem from '@/components/PostItem.vue'
+import PostSkeleton from '@/components/PostSkeleton.vue'
+import InfiniteLoadMore from '@/components/InfiniteLoadMore.vue'
+import { followUser, getUser, getUserPosts, unfollowUser } from '@/api/user'
+import { useMainStore } from '@/store/main'
 import { useUserStore } from '@/store/user'
 import { prettyQuoteNum } from '@/utils/count'
+import type { PostListItem } from '@/types/api'
+
+/** 作者 `User.vue` 的 `pageSize` 是 20（`:205`） */
+const PAGE_SIZE = 20
 
 const route = useRoute()
 const router = useRouter()
+const mainStore = useMainStore()
 const userStore = useUserStore()
+const { isMobile } = storeToRefs(mainStore)
 const { user: me } = storeToRefs(userStore)
 
 /** 路由是 `/user/:id`（路径传参）。作者那边是 `/u?s=<用户名>`，见 PROJECT.md §11.6 */
@@ -37,6 +47,14 @@ const userLoading = ref(false)
 
 /** 'post' | 'comment' | 'highlight' | 'media' | 'star'，对齐作者 template 里的 name */
 const pageType = ref('post')
+const loading = ref(false)
+const postList = ref<PostListItem[]>([])
+const page = ref(1)
+const totalPage = ref(0)
+const noMore = ref(false)
+
+/** 只有「泡泡」有数据。另外四个 tab 仍显示空态 */
+const showEmpty = computed(() => pageType.value !== 'post' || postList.value.length === 0)
 
 /** 我有没有关注他。后端查不到，只能由本轮的操作自己维护（见 §11.8） */
 const following = ref(false)
@@ -54,6 +72,7 @@ const avatarText = computed(() => (userName.value || '泡').slice(0, 1).toUpperC
 async function loadUser(): Promise<void> {
   if (userId.value === 0) return
   userLoading.value = true
+  let ok = false
   try {
     const profile = await getUser(userId.value)
     userName.value = profile.name
@@ -61,6 +80,7 @@ async function loadUser(): Promise<void> {
     followCount.value = profile.following_count
     fanCount.value = profile.follower_count
     postCount.value = profile.post_count
+    ok = true
   } catch {
     // 用户不存在时后端 404，拦截器会弹红条。这里把头部清干净。
     userName.value = ''
@@ -68,9 +88,53 @@ async function loadUser(): Promise<void> {
     followCount.value = 0
     fanCount.value = 0
     postCount.value = 0
+    postList.value = []
   } finally {
     userLoading.value = false
   }
+  if (ok) await loadPosts(true)
+}
+
+/**
+ * 「泡泡」列表。作者 `User.vue:292-322` 的 `loadPostsByStyle`：
+ * 第 1 页替换、后面追加；空数组或到最后一页就停；翻页失败把页码退回去。
+ * 他用 `rsp.pager.total_rows`，我们用顶层 `total`。
+ * 只在当前 tab 是「泡泡」时请求。style 是 C55，这一轮不传。
+ */
+async function loadPosts(reset = false): Promise<void> {
+  const id = userId.value
+  if (id === 0 || pageType.value !== 'post') return
+  if (reset) {
+    page.value = 1
+    noMore.value = false
+    postList.value = []
+  }
+  if (postList.value.length === 0) loading.value = true
+  try {
+    const res = await getUserPosts(id, { page: page.value, page_size: PAGE_SIZE })
+    if (userId.value !== id) return
+    const rows = res.list ?? []
+    postList.value = page.value > 1 ? [...postList.value, ...rows] : rows
+    totalPage.value = Math.ceil(res.total / PAGE_SIZE)
+    if (rows.length === 0 || page.value >= totalPage.value) noMore.value = true
+  } catch {
+    if (userId.value !== id) return
+    if (page.value > 1) page.value -= 1
+    else postList.value = []
+  } finally {
+    if (userId.value === id) loading.value = false
+  }
+}
+
+/** 作者 `changeTab`（`:330-336`）会按新 tab 重拉。我们只有「泡泡」能拉 */
+function changeTab(name: string | number): void {
+  if (name === 'post') void loadPosts(true)
+}
+
+function handleNextPage(): void {
+  if (noMore.value || loading.value || pageType.value !== 'post') return
+  page.value += 1
+  void loadPosts()
 }
 
 /* ---------------- 交互 ---------------- */
@@ -146,6 +210,10 @@ watch(userId, () => {
   postCount.value = 0
   following.value = false
   pageType.value = 'post'
+  postList.value = []
+  page.value = 1
+  totalPage.value = 0
+  noMore.value = false
   void loadUser()
 })
 </script>
@@ -217,13 +285,15 @@ watch(userId, () => {
       </div>
 
       <!--
-        作者这里也是五个 tab（和 Profile.vue 同一套）。
-        而本项目**一个都没得做** —— 他的数据来自
-        `GET /users/:username/posts?style=post|comment|highlight|media|star`，
-        本后端没有这个接口（也没有 `style` 参数）。
-        所以五个 tab 全留着（照原版），点了只会换高亮，下面永远是空态。
+        作者五个 tab（`:92-97`）。「泡泡」走 C4。
+        评论 / 亮点 / 图文 / 喜欢要 `style`，那是 C55 / C56，点了仍是空态。
       -->
-      <el-tabs v-if="!userLoading" v-model="pageType" class="profile-tabs-wrap">
+      <el-tabs
+        v-if="!userLoading"
+        v-model="pageType"
+        class="profile-tabs-wrap"
+        @tab-change="changeTab"
+      >
         <el-tab-pane label="泡泡" name="post" />
         <el-tab-pane label="评论" name="comment" />
         <el-tab-pane label="亮点" name="highlight" />
@@ -231,9 +301,27 @@ watch(userId, () => {
         <el-tab-pane label="喜欢" name="star" />
       </el-tabs>
 
-      <div class="empty-wrap">
-        <el-empty description="暂无数据" :image-size="120" />
+      <div v-if="!userLoading && pageType === 'post' && loading && postList.length === 0" class="skeleton-wrap">
+        <PostSkeleton :num="PAGE_SIZE" />
       </div>
+      <template v-else-if="!userLoading">
+        <div v-if="showEmpty" class="empty-wrap">
+          <el-empty description="暂无数据" :image-size="120" />
+        </div>
+        <template v-else>
+          <div v-for="post in postList" :key="post.id" class="list-item">
+            <PostItem :post="post" :is-mobile="isMobile" />
+          </div>
+        </template>
+      </template>
+
+      <InfiniteLoadMore
+        v-if="pageType === 'post' && postList.length > 0"
+        :total-page="totalPage"
+        :no-more="noMore"
+        complete-text="没有更多泡泡了"
+        @load-more="handleNextPage"
+      />
     </div>
   </div>
 </template>
@@ -249,6 +337,10 @@ watch(userId, () => {
   border-top: none;
   border-radius: 0;
   background-color: var(--el-bg-color);
+
+  > .list-item + .list-item {
+    border-top: 1px solid var(--el-border-color);
+  }
 }
 
 /* ---- 头部（作者 `:584-628`）---- */

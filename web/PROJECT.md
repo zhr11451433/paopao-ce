@@ -6,8 +6,8 @@
 > **【AI 请注意】每次开工前完整读完本文件再动手，不要凭记忆、不要凭上一轮印象。**
 > **【我（人类）请注意】AI 每轮自己改 §11 的状态；我只要回一个字。**
 
-> **【当前状态 · 第 29 轮】**
-> T1–T18 已验收。S 档停用。C1 已验收。**C2 已交付、等验收**（`UserView.vue` 头部改用 `GET /users/:id`）。下一件是 C3，要等 C2 标 ✅ 才能做。
+> **【当前状态 · 第 40 轮】**
+> T1–T18 已验收。S 档停用。C1–C12 已验收。**C13 已交付、等验收**（`GET /posts?style=hots` 按点赞数排序）。下一件是 C14，要等 C13 标 ✅ 才能做。C14 只改 `HomeView.vue`。
 >
 > **§11 的节号沿用旧版**：11.2 / 11.3 / 11.10 已大幅压缩，节号保留是为了不破坏 §11.4 / §12 这些交叉引用。
 
@@ -588,7 +588,7 @@ C 档某一行点名要改其中的类型、api 函数或**新增**路由时可�
 ### 11.3 已完成（**别再重做**）
 
 - **页面**：`HomeView`（广场 `/`）、`PostDetailView`（`/post/:id`）、`FollowingView`（`/following?id=&n=&t=`）、`ProfileView`（`/profile`）、`UserView`（`/user/:id`，**阶段 A**）、`NotFoundView`（`/404`），外加 `PlaceholderView` 顶着 `/topic` `/messages` `/collection` `/contacts` `/setting` 五个占位路由。
-- **组件**（14 个，`src\components\`）：`AppSidebar`、`AppRightbar`、`MainNav`、`MobileNav`、`HomeCompose`、`PostItem`、`PostImage`、`PostSkeleton`、`InfiniteLoadMore`、`PostLink`（阶段 A）、`CommentItem`、`ComposeComment`、`UserCard`（阶段 A）、`PostDetail`。
+- **组件**（14 个，`src\components\`）：`AppSidebar`、`AppRightbar`、`MainNav`、`MobileNav`、`HomeCompose`、`PostItem`、`PostImage`、`PostSkeleton`、`InfiniteLoadMore`、`PostLink`（阶段 A）、`CommentItem`、`ComposeComment`、`UserCard`（C3 起名字和计数来自 `GET /users/:id`）、`PostDetail`。
 - **工具**：`src\utils\formatTime.ts`、`src\utils\count.ts`。
 
 > 这份清单**只到这一行为止**。要确认某个文件在不在，**直接列 `src\components\` `src\views\` 目录**，不要依赖本文件。
@@ -629,23 +629,23 @@ S1–S12 不再取活。那些功能改到下面的 C 档，拆成「先后端�
 | # | 侧 | 做什么 | 作者依据 | 只改这些 | 状态 |
 |---|---|---|---|---|---|
 | **C1** | 后端 | `GET /users/:id`：`id`、`name`、`role`，以及关注数、粉丝数、帖子数 | `User.d.ts` 的 `profile` | Go + `types\api.ts` + `api\user.ts` | ✅ 第 29 轮 |
-| **C2** | 前端 | `UserView.vue` 头部改用 C1，不再从关注列表借名字 | `views\User.vue` | 只改这一个页面 | 🚧 第 29 轮，**等你验收** |
-| **C3** | 前端 | `UserCard.vue` 改用 C1 的真资料 | `components\user-card.vue` | 只改这一个组件 | |
-| **C4** | 后端 | `GET /users/:id/posts`，分页，每一项用现有 `PostListItem` | `User.d.ts` 的 `posts` | Go + 类型 + `api\user.ts` | |
-| **C5** | 前端 | `UserView.vue` 的帖子列表接 C4，去掉永远空态 | `views\User.vue` 的「泡泡」tab | 只改这一个页面 | |
-| **C6** | 后端 | `GET /posts/me` 补上 `user_id`、`like_count`、`is_liked`（广场已经有） | 我的主页空枪，见 §11.8 | Go + `types\api.ts` | |
-| **C7** | 前端 | `ProfileView.vue` 的帖子卡片能点赞、作者名能点 | `views\Profile.vue` | 只改这一个页面 | |
+| **C2** | 前端 | `UserView.vue` 头部改用 C1，不再从关注列表借名字 | `views\User.vue` | 只改这一个页面 | ✅ 第 30 轮 |
+| **C3** | 前端 | `UserCard.vue` 改用 C1 的真资料 | `components\user-card.vue` | 只改这一个组件 | ✅ 第 31 轮 |
+| **C4** | 后端 | `GET /users/:id/posts`，分页，每一项用现有 `PostListItem` | `User.d.ts` 的 `posts` | Go + 类型 + `api\user.ts` | ✅ 第 32 轮 |
+| **C5** | 前端 | `UserView.vue` 的帖子列表接 C4，去掉永远空态 | `views\User.vue` 的「泡泡」tab | 只改这一个页面 | ✅ 第 33 轮。只接了「泡泡」；另外四个 tab 仍空，那是 C56 |
+| **C6** | 后端 | `GET /posts/me` 补上 `user_id`、`like_count`、`is_liked`（广场已经有） | 我的主页空枪，见 §11.8 | Go + `types\api.ts` | ✅ 第 34 轮 |
+| **C7** | 前端 | `ProfileView.vue` 的帖子卡片能点赞、作者名能点 | `views\Profile.vue` | 只改这一个页面 | ✅ 第 35 轮 |
 
 ##### 关注、搜索、热门、评论
 
 | # | 侧 | 做什么 | 作者依据 | 只改这些 | 状态 |
 |---|---|---|---|---|---|
-| **C8** | 后端 | 帖子列表和详情加 `is_following` | `post-item.vue:218-224` | Go + `PostListItem` / `PostDetail` | |
-| **C9** | 前端 | `PostItem.vue`「更多」里加上关注 / 取关 | 同上 | 只改这一个组件 | |
-| **C10** | 前端 | `PostDetail.vue`「更多」里加上关注 / 取关 | `post-detail.vue:336-348` | 只改这一个组件 | |
-| **C11** | 后端 | `GET /posts` 增加 `q`，按标题和正文包含匹配。不要接 Meilisearch | `Home.vue:345-350` 的 search | Go + `PageParams` 或单独参数 | |
-| **C12** | 前端 | `AppRightbar.vue` 加上搜索框，提交后打开 `/?q=` | `rightbar.vue` 的 search-wrap | 只改这一个组件 | |
-| **C13** | 后端 | `GET /posts?style=hots` 按点赞数排序 | `Home.vue` 的 `hots` | Go | |
+| **C8** | 后端 | 帖子列表和详情加 `is_following` | `post-item.vue:218-224` | Go + `PostListItem` / `PostDetail` | ✅ 第 36 轮 |
+| **C9** | 前端 | `PostItem.vue`「更多」里加上关注 / 取关 | 同上 | 只改这一个组件 | ✅ 第 37 轮 |
+| **C10** | 前端 | `PostDetail.vue`「更多」里加上关注 / 取关 | `post-detail.vue:336-348` | 只改这一个组件 | ✅ 第 38 轮 |
+| **C11** | 后端 | `GET /posts` 增加 `q`，按标题和正文包含匹配。不要接 Meilisearch | `Home.vue:345-350` 的 search | Go + `PageParams` 或单独参数 | ✅ 第 39 轮。用的是单独的 `PostListParams.q`，没放进共用的 `PageParams` |
+| **C12** | 前端 | `AppRightbar.vue` 加上搜索框，提交后打开 `/?q=` | `rightbar.vue` 的 search-wrap | 只改这一个组件 | ✅ 第 40 轮 |
+| **C13** | 后端 | `GET /posts?style=hots` 按点赞数排序 | `Home.vue` 的 `hots` | Go | 🚧 第 40 轮，**等你验收**。查询参数写进了 `PostListParams.style` |
 | **C14** | 前端 | `HomeView.vue` 的「热门推荐」真的换列表 | `Home.vue` 的 loadPosts | 只改这一个页面 | |
 | **C15** | 后端 | `GET /posts/:id/comments` 增加 `sort=default\|hots\|newest` | `Post.vue:21-23` | Go | |
 | **C16** | 前端 | 详情页三个排序 Tab 按 C15 重新请求 | `views\Post.vue` | 只改 `PostDetailView.vue` | |
@@ -790,7 +790,6 @@ type CommentItem struct {
 | 位置 | 情况 | 谁来做 |
 |---|---|---|
 | `src\types\api.ts` 的 `FollowingResult` / `FollowerResult` | 后端 `F:\paopao\internal\service\follow.go:136-142`（及 `:152-201`）**已经返回**顶层 `"user": <昵称>`，契约里漏了这两个字段。`UserView.vue` 现在用一个就地收窄的类型别名顶着 | 前端自己的活，确认后补两行、删别名 |
-| `src\types\api.ts` 的 `PostListItem` | 三个新字段写成了**可选**。原因：`GET /posts` / `GET /feed` 有它们，`GET /posts/me` 没有。我的主页把瘦结构补上 `author` 之后当成 `PostListItem` 用，改成必填会编出点赞数 | 已按可选落地。主页上作者名不可点、点赞没有数字，见 11.8 |
 | `F:\paopao\internal\service\follow.go` 后半段 | `GET /users/:id/followers` 大概率也返回顶层 `user`，**未确认** | 顺手核一下 |
 
 ---
@@ -803,8 +802,8 @@ type CommentItem struct {
 | 优先级 | 补什么 | 解决什么 | 改动量 |
 |---|---|---|---|
 | ✅ 已落地 | **〔配方 B0〕** `PostListItem` / `PostDetail` 加 `user_id` / `like_count` / `is_liked` | 坑 1、坑 2。后端已写完，前端类型等 T18 | 极小 |
-| ✅ 已落地 | `GET /users/:id` 查用户资料（C1） | `UserView` 头部已接（C2）。`UserCard` 还没接，等 C3 | 小 |
-| ★★★★ | `GET /users/:id/posts` 查别人发的帖子 | `UserView` 的帖子列表现在**永远是空态** | 小 |
+| ✅ 已落地 | `GET /users/:id` 查用户资料（C1） | `UserView` 头部已接（C2）。`UserCard` 已接（C3） | 小 |
+| ✅ 已落地 | `GET /users/:id/posts` 查别人发的帖子 | 接口已验收（C4）。`UserView` 的「泡泡」已接（C5） | 小 |
 | ★★★★ | `CommentItem` 加 `parent_id` | 二级回复（解锁 S9） | 中（动表结构） |
 | ★★★ | 收藏接口 | 解锁 S3 | 中（加表） |
 | ★★ | 话题体系 | 解锁 S1 | 大 |
@@ -819,16 +818,16 @@ type CommentItem struct {
 
 | 位置 | 现象 | 原因 | 什么时候能修 |
 |---|---|---|---|
-| `HomeView.vue` 的「热门推荐」按钮 | 点了只换高亮，列表不动 | 后端没有热门排序接口 | 后端补接口 |
+| `HomeView.vue` 的「热门推荐」按钮 | 点了只换高亮，列表不动 | `GET /posts?style=hots` 已按点赞数从高到低排（C13）。页面还没把 `style` 传进去 | C14 |
 | `PostDetailView.vue` 评论区的三个排序 Tab | 同上 | `GET /posts/:id/comments` 没有排序参数 | 后端补参数 |
 | `ComposeComment.vue` 的图片按钮 | 能传上去，**发布时带不走** | 后端 `CommentReq` 只有 `content` | 后端补字段 |
 | `PostItem.vue` 的收藏 / 分享图标 | 只有图标，没有数字 | 后端没有 `collection_count` / `share_count` | 后端补字段 |
-| `PostItem.vue` 的「更多」菜单 | 项很少 | 缺 `is_lock` / `visibility` / 好友关系 | 部分等 S4 |
-| `UserView.vue` 的帖子列表 | **永远空态** | 后端没有「查别人的帖子」接口 | 见 11.7 |
+| `PostItem.vue` 的「更多」菜单 | 没有私信、加好友、锁定、可见范围 | 关注 / 取关已接（C9）。私信、好友、锁定还没有接口 | C41 / C42 / C51 |
+| `PostDetail.vue` 的「更多」菜单 | 别人的帖子只有关注 / 取关。没有私信。自己的帖子只有删除，没有锁定、置顶、亮点、可见范围。管理员看别人的帖子这颗按钮不出现 | 关注 / 取关已接（C10）。其余项作者有，接口还没有 | C41 / C52 |
+| `UserView.vue` 的「评论 / 亮点 / 图文 / 喜欢」 | 点了是空态 | 后端没有 `style`。 「泡泡」已经接上 `GET /users/:id/posts` | C55 补参数，C56 接页面 |
 | `UserView.vue` 的「好友 / 已关注」标签 | 不显示 | C1 没有好友关系、也没有 `is_following`。`role === 'admin'` 时会显示「管理员」 | 好友和是否已关注等以后的接口 |
-| `UserCard.vue` | 只有一个名字 | C1 已有资料接口，这个组件还没改（C3） | C3 |
-| `HomeView.vue` 的标题 | 地址带 `?q=` 时标题会变成「搜索: …」或「#话题」，**列表仍是全部帖子** | 后端 `GET /posts` 没有搜索 / 话题参数（作者 `Home.vue:347-350` 会把 `query` / `type` / `style` 传给 `getPosts`） | 后端补参数 |
-| `ProfileView.vue` 里的帖子卡片 | 作者名不能点，爱心旁边没有数字，点爱心会进详情而不是点赞 | `GET /posts/me` 没有 `user_id` / `like_count` / `is_liked`。广场和详情有，所以只有这一页是这样 | 后端给「我的帖子」补上同样三个字段 |
+| `UserCard.vue` | 头像是空圆；没有「加入时间」；「已关注」仍靠列表页按 Tab 推断 | C1 没有头像、没有注册时间、没有 `is_following`。名字、管理员标签、关注 / 粉丝 / 泡泡数已经来自 `GET /users/:id` | 头像等 C45 / C47。是否已关注等以后的接口 |
+| `HomeView.vue` 的标题 | 地址带 `?q=` 时标题会变成「搜索: …」或「#话题」，**列表仍是全部帖子** | 搜索框已接（C12），回车会打开 `/?q=`。`GET /posts?q=` 能搜（C11），但 `HomeView` 还没把 `q` 传给 `getPosts`。`#话题` 仍没有参数 | 列表要接上得另说。话题是 C27 |
 | `PostLink.vue` | 广场和详情上都**不再出现**外链。组件文件还在 | T18 选了方案 ②：假链接不能挂在真帖子上。后端仍然没有 `links` | 后端补字段后再挂回去 |
 
 > 这类「样子在、功能挂着」的项，**每发现一个就往这里加一行**，否则三个月后你会以为登录是好的。
@@ -855,7 +854,18 @@ C 档一行标 ✅ 就表示这一行做完了。后端行 ✅ 只表示接口�
 第 1–21 轮的逐轮记录已在第 22 轮精简时删除。第 22 轮 = PROJECT.md 精简。第 23–25 轮 = T17、T18。第 26 轮 = 改契约（S 档停用，C1–C68 列出）。
 第 27 轮 = **只改文档、没写功能代码**：加了 §10.7 交付前自检、§11.4 取活规则、§11.11.3 后端三步写法、§11.9 自检那一行。
 第 28 轮 = C1 `GET /users/:id` 写完，等验收。
-第 29 轮 = C1 标 ✅。C2：`UserView.vue` 头部改调 `getUser`，名字、关注、粉丝、泡泡、管理员标签都来自 `GET /users/:id`。帖子列表仍空（C5）。**下一件是 C3，C2 没标 ✅ 之前不要做。**
+第 29 轮 = C1 标 ✅。C2：`UserView.vue` 头部改调 `getUser`，名字、关注、粉丝、泡泡、管理员标签都来自 `GET /users/:id`。帖子列表仍空（C5）。
+第 30 轮 = C2 标 ✅。C3：`UserCard.vue` 按 `contact.id` 调 `getUser`。名字、管理员标签、关注 / 粉丝 / 泡泡数来自资料接口；列表里的 name 只在请求回来前兜底。关注 / 取关菜单没改。头像仍空。
+第 31 轮 = C3 标 ✅。你回了「可以」之后写下 C4：`GET /users/:id/posts`，分页，每一项是现有 `PostListItem`。用户不存在返回 404。没有 `style`（那是 C55）。没改页面。
+第 32 轮 = C4 标 ✅。C5：`UserView.vue` 的「泡泡」用 `getUserPosts` 拉真列表，滚到底继续翻页。另外四个 tab 仍是空态。
+第 33 轮 = C5 标 ✅。C6：`GET /posts/me` 的每一项补上 `user_id`、`like_count`、`is_liked`。没有 `author`，也没改 `ProfileView.vue`。
+第 34 轮 = C6 标 ✅。C7：`ProfileView.vue` 把这三项交给 `PostItem`。作者名点进 `/user/:id`，爱心显示数字并点赞，不再进详情。
+第 35 轮 = C7 标 ✅。你回了「继续」之后写下 C8：`GET /posts`、`GET /feed`、`GET /users/:id/posts`、`GET /posts/:id` 增加 `is_following`。未登录是 false。`GET /posts/me` 没有这个字段。没改页面。
+第 36 轮 = C8 标 ✅。C9：`PostItem.vue`「更多」里加上关注 / 取关。用 C8 的 `is_following` 和现有 `followUser` / `unfollowUser`。自己的帖、未登录不出现这项。私信和加好友没做。没改 `PostDetail.vue`（那是 C10）。
+第 37 轮 = C9 标 ✅。C10：`PostDetail.vue`「更多」里加上关注 / 取关。作者 `post-detail.vue:331-353`：不是管理员、也不是作者本人，才出现这项；自己的帖子仍只有删除。未登录不出现。私信、锁定、置顶、亮点、可见范围没做。没改 Go。
+第 38 轮 = C10 标 ✅。C11：`GET /posts` 增加 `q`，标题或正文包含即命中。空的 `q` 仍是全部帖子。没接搜索引擎，也没做 `style=hots` 和话题。类型放在 `PostListParams`，没改页面。
+第 39 轮 = C11 标 ✅。C12：`AppRightbar.vue` 加上搜索框。回车打开 `/?q=`，空词打开广场且不带 `q`。热门话题没画。没改 `HomeView.vue`，所以列表仍不过滤。
+第 40 轮 = C12 标 ✅。C13：`GET /posts?style=hots` 按点赞数从高到低，赞数相同再按 id 倒序。不传 style 仍是新帖在前。`q` 可以一起用。没改页面。
 
 ---
 

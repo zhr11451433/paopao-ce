@@ -64,7 +64,7 @@ func (u *FeedHandler) Feed(c *gin.Context) {
 	for _, post := range Posts {
 		postIDs = append(postIDs, post.ID)
 	}
-		countMap, err := commentCountMap(u.db, postIDs)
+	countMap, err := commentCountMap(u.db, postIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
 		return
@@ -80,6 +80,15 @@ func (u *FeedHandler) Feed(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
 		return
 	}
+	authorIDs := make([]uint, 0, len(Posts))
+	for _, post := range Posts {
+		authorIDs = append(authorIDs, post.UserID)
+	}
+	followingSet, err := followingAuthorSet(u.db, myId, authorIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+		return
+	}
 	requestPosts := make([]PostListItem, 0, len(Posts))
 	for _, post := range Posts {
 		// ① 先把这篇帖子的图片转成 DTO（同样是"长度 0 + append"）
@@ -87,12 +96,13 @@ func (u *FeedHandler) Feed(c *gin.Context) {
 		requestPosts = append(requestPosts, PostListItem{
 			ID:           post.ID,
 			Author:       post.User.Name,
-			UserID:       post.UserID,       // ← 新增
+			UserID:       post.UserID, // ← 新增
 			CreatedAt:    post.CreatedAt,
 			Title:        post.Title,
 			CommentCount: countMap[post.ID],
 			LikeCount:    likeMap[post.ID],  // ← 新增
 			IsLiked:      likedSet[post.ID], // ← 新增
+			IsFollowing:  followingSet[post.UserID],
 			Images:       images,
 		})
 	}

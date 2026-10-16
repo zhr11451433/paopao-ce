@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  BodyOutline,
   BookmarkOutline,
   ChatboxOutline,
   EllipsisHorizontal,
@@ -9,9 +10,11 @@ import {
   HeartOutline,
   ShareSocialOutline,
   TrashOutline,
+  WalkOutline,
 } from '@vicons/ionicons5'
 import PostImage from '@/components/PostImage.vue'
 import { deletePost, likePost, unlikePost } from '@/api/post'
+import { followUser, unfollowUser } from '@/api/user'
 import { useUserStore } from '@/store/user'
 import { formatPrettyTime } from '@/utils/formatTime'
 import type { PostDetail } from '@/types/api'
@@ -80,23 +83,109 @@ async function toggleLike(): Promise<void> {
 }
 
 /**
- * 作者 `post-detail.vue:329-...` 的 `adminOptions` 菜单里有十几项：
- * 私信 / 关注 / 取消关注 / 加好友 / 删除 / 锁定 / 解锁 / 置顶 / 取消置顶 /
- * 设为亮点 / 取消亮点 / 可见度子菜单（公开·私密·关注可见·好友可见）。
- *
- * 认得出是不是自己了（比 user_id），但菜单里其余项仍依赖后端没有的字段：
- *   is_lock、is_top、is_essence、visibility，
- *   以及好友 / 关注关系（follow.go 有接口，但没有「我和他是什么关系」的查询）。
- *
- * 所以这里只留**唯一能做的**一项：删除 —— 因为后端有 `DELETE /posts/:id`（router.go:47）。
- * 而且他的菜单是「非作者显示关注那几项、作者显示后面那一串」，
- * 我们去掉关注那几项之后，**非作者就没有任何一项可显示**，
- * 所以模板里那颗「…」按钮是 `v-if="isOwner"` 的（他是常驻的）。
+ * 作者 `post-detail.vue:340-351` 用 `post.user.is_following` 决定写「关注」还是「取消关注」。
+ * C8 把这个布尔值放到详情顶层 `is_following`。外面重新拉帖子时 props 会变，所以要 watch。
  */
-const MORE_OPTIONS = [{ key: 'delete', label: '删除', icon: TrashOutline }] as const
+const following = ref(props.post.is_following === true)
+watch(
+  () => props.post.is_following,
+  (value) => {
+    following.value = value === true
+  },
+)
+
+/**
+ * 作者 `post-detail.vue:331-353`：不是管理员、也不是作者本人，菜单里才有关注 / 取关，
+ * 然后直接 return，不再出现删除。管理员看别人的帖子走的是锁定 / 置顶那一串（C52），这里不加关注。
+ * 未登录没有 user id，不出现这项，和广场卡片 C9 一样。
+ * 同一段里还有「私信」，那是 C41，这一轮不加。
+ */
+const canFollow = computed(() => {
+  const myId = userStore.user?.id
+  return (
+    userStore.role !== 'admin' &&
+    Boolean(myId) &&
+    props.post.user_id > 0 &&
+    myId !== props.post.user_id
+  )
+})
+
+/**
+ * 作者 `post-detail.vue:329` 起的菜单还有锁定、置顶、亮点、可见范围。
+ * 那些字段和接口都还没有（C51 / C52），自己的帖子仍然只留删除。
+ */
+type MoreOption = {
+  key: 'delete' | 'follow' | 'unfollow'
+  label: string
+  icon: Component
+}
+
+const moreOptions = computed((): MoreOption[] => {
+  const options: MoreOption[] = []
+  if (canFollow.value) {
+    if (following.value) {
+      options.push({
+        key: 'unfollow',
+        label: '取消关注 @' + props.post.author,
+        icon: WalkOutline,
+      })
+    } else {
+      options.push({
+        key: 'follow',
+        label: '关注 @' + props.post.author,
+        icon: BodyOutline,
+      })
+    }
+  }
+  if (isOwner.value) {
+    options.push({ key: 'delete', label: '删除', icon: TrashOutline })
+  }
+  return options
+})
+
+/**
+ * 作者点关注走 `useUserAction.ts:14-51` 的 `followAction`：
+ * 先弹「确定关注 @名字 吗？」/「确定取消关注 @名字 吗？」，确定后再打接口。
+ * 成功文案照他写的：关注是「关注成功」，取关是「操作成功」。
+ * 他成功后改的是 `post.user.is_following`（`post-detail.vue:455-459`），这里改本地的 following。
+ */
+async function handleFollowAction(): Promise<void> {
+  const authorId = props.post.user_id
+  if (!authorId) return
+  try {
+    await ElMessageBox.confirm(
+      `确定${following.value ? '取消关注 @' : '关注 @'}${props.post.author} 吗？`,
+      '提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'success',
+      },
+    )
+  } catch {
+    return
+  }
+  try {
+    if (following.value) {
+      await unfollowUser(authorId)
+      following.value = false
+      ElMessage.success('操作成功')
+    } else {
+      await followUser(authorId)
+      following.value = true
+      ElMessage.success('关注成功')
+    }
+  } catch {
+    // 401 / 400 由 utils/request.ts 统一弹
+  }
+}
 
 /** el-dropdown 的 command 类型是 string | number | object，不是纯 string */
 function handleMoreAction(command: string | number | object): void {
+  if (command === 'follow' || command === 'unfollow') {
+    void handleFollowAction()
+    return
+  }
   if (command === 'delete') void confirmDelete()
 }
 
@@ -188,13 +277,18 @@ async function handleShare(): Promise<void> {
           <!--
             作者 `post-detail.vue:49-63` 的 n-dropdown：trigger="click"（列表卡片才是 hover）
           -->
-          <el-dropdown v-if="isOwner" trigger="click" @command="handleMoreAction">
+          <!--
+            作者这颗按钮是常驻的（post-detail.vue:49-63）。
+            我们菜单里暂时只有「别人的帖：关注 / 取关」和「自己的帖：删除」。
+            两项都没有时（未登录看别人、或管理员看别人）不画这颗按钮，避免点开是空的。
+          -->
+          <el-dropdown v-if="moreOptions.length" trigger="click" @command="handleMoreAction">
             <el-button text circle size="small">
               <el-icon><EllipsisHorizontal /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item v-for="opt in MORE_OPTIONS" :key="opt.key" :command="opt.key">
+                <el-dropdown-item v-for="opt in moreOptions" :key="opt.key" :command="opt.key">
                   <el-icon><component :is="opt.icon" /></el-icon>
                   {{ opt.label }}
                 </el-dropdown-item>

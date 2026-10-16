@@ -3,9 +3,15 @@ import type {
   FollowerResult,
   FollowingResult,
   PageParams,
+  PostListResult,
   StatusResult,
   UserProfile,
 } from '@/types/api'
+
+/** 某人发的帖子：GET /users/:id/posts。不用登录。外壳和广场一样 */
+export function getUserPosts(id: number, params: PageParams = {}): Promise<PostListResult> {
+  return request<PostListResult>({ url: `/users/${id}/posts`, method: 'get', params })
+}
 
 /** 某人的公开资料：GET /users/:id。不用登录 */
 export function getUser(id: number): Promise<UserProfile> {

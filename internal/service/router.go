@@ -73,7 +73,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		user.GET("/:id/followers", followHandler.FanList)
 		user.POST("/:id/follow", Auth, followHandler.Follow)
 		user.DELETE("/:id/follow", Auth, followHandler.Unfollow)
-		// 公开资料，不用登录。放在 /:id/following 后面，避免和更长的路径抢
+		// 某人发的帖子。OptionalAuth：未登录也能看，登录了才知道 is_liked
+		user.GET("/:id/posts", OptionalAuth, postHandler.ListByUser)
+		// 公开资料，不用登录。放在更长的 /:id/... 后面，避免和它们抢
 		user.GET("/:id", userHandler.GetOne)
 	}
 	return r

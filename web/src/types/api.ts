@@ -12,6 +12,21 @@ export interface PageParams {
   page_size?: number
 }
 
+/**
+ * 广场列表 GET /posts 的查询参数。
+ * `q` 按标题和正文包含匹配。`style=hots` 按点赞数排序。
+ * 别的列表接口没有这两个参数，所以不放进 PageParams。
+ */
+export interface PostListParams extends PageParams {
+  /** 按标题和正文包含匹配。不传或空字符串就是全部帖子 */
+  q?: string
+  /**
+   * `hots` 按点赞数从高到低。不传就是按发帖时间从新到旧。
+   * 正在关注不走这个参数，它是 GET /feed。
+   */
+  style?: 'hots'
+}
+
 /** 图片：上传接口返回的、以及帖子列表里带的，是同一个形状 */
 export interface ImageItem {
   id: number
@@ -23,11 +38,10 @@ export interface ImageItem {
 /**
  * 帖子列表项 —— GET /posts、GET /feed。
  *
- * `user_id` / `like_count` / `is_liked` 这三个字段广场和关注流**有**
- * （后端 `PostListItem`，配方 B0）。
- * `GET /posts/me` 用的是另一个更瘦的结构 `MyPostListItem`，没有这三项。
- * 我的主页为了复用 `PostItem`，会把 `MyPostListItem` 补一个 `author` 再当成
- * `PostListItem` 用，所以这三项必须是可选的：主页上作者名不可点、点赞没有数字。
+ * `user_id` / `like_count` / `is_liked` 广场、关注流、`GET /users/:id/posts`
+ * 以及 `GET /posts/me` 都有。`GET /posts/me` 的正式类型是下面的 `MyPostListItem`，
+ * 没有 `author`。我的主页补上作者名后再当成 `PostListItem` 用，
+ * 所以这三项在这里仍是可选的，避免手写的列表项必须填点赞数。
  */
 export interface PostListItem {
   id: number
@@ -38,20 +52,28 @@ export interface PostListItem {
   comment_count: number
   /** ⚠️ 可能是 null：Go 的 nil 切片序列化出来就是 null，不是 [] */
   images: ImageItem[] | null
-  /** 作者 id。有它才能点进 `/user/:id`。我的主页那条接口没有，所以可选 */
+  /** 作者 id。有它才能点进 `/user/:id` */
   user_id?: number
-  /** 点赞人数。同上，我的主页没有这个数 */
+  /** 点赞人数 */
   like_count?: number
   /** 当前登录用户赞过没有。未登录时后端给 false */
   is_liked?: boolean
+  /**
+   * 当前登录用户是否关注了作者。
+   * 广场、关注流、别人的帖子、详情都有。我的主页自己拼的卡片不带，所以可选。
+   */
+  is_following?: boolean
 }
 
-/** 我的帖子列表项 —— GET /posts/me，注意它没有 author 字段 */
+/** 我的帖子 —— GET /posts/me。没有 author，名字由「我的主页」自己填 */
 export interface MyPostListItem {
   id: number
   title: string
   created_at: string
+  user_id: number
   comment_count: number
+  like_count: number
+  is_liked: boolean
   images: ImageItem[] | null
 }
 
@@ -68,11 +90,16 @@ export interface PostDetail {
   like_count: number
   /** 当前登录用户赞过没有。未登录时后端给 false */
   is_liked: boolean
+  /** 当前登录用户是否关注了作者。未登录或看自己的帖子时是 false */
+  is_following: boolean
   comments: CommentItem[] | null
   images: ImageItem[] | null
 }
 
-/** ⚠️ 六个接口的列表 key 各不相同，所以下面四个"外壳"不能合并成一个泛型 */
+/**
+ * 广场 `GET /posts` 和某人的帖子 `GET /users/:id/posts` 用同一个外壳。
+ * ⚠️ 六个接口的列表 key 各不相同，所以下面四个外壳不能合并成一个泛型。
+ */
 export interface PostListResult {
   total: number
   page: number
